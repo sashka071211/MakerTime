@@ -146,6 +146,7 @@ class PlanetClicker(QWidget):
         else:
             # Клік поза планетою дає звичайний бонус
             self.score += self.click_power
+        #     двічі перевірка поза планетою
 
         self.update_ui()  # Оновлюємо відображення
 
