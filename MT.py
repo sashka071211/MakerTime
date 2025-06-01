@@ -1,162 +1,245 @@
-import sys
-import random
-from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QPushButton
-from PyQt5.QtGui import QPainter, QColor, QFont
-from PyQt5.QtCore import Qt
-
+import sys, random
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
 
 class PlanetClicker(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("🌍 Planet Clicker")
-        self.showMaximized()
-        self.setStyleSheet("background-color: #1e1e2f;")
+        self.showFullScreen()
+        self.setStyleSheet("background:#1e1e2f; color: white;")
+        self.score, self.click_power, self.income = 0, 1, 0
+        self.click_cost, self.income_cost = 50, 100
+        self.grid_size, self.square, self.radius = 19, 24, 9
+        self.daily_bonus_available = True
+        self.make_ui()
+        self.timer = QTimer(self, timeout=self.add_income)
+        self.timer.start(1000)
 
-        self.score = 0
-        self.click_power = 1
-        self.upgrade_cost = 50
+    def make_ui(self):
+        def label(t, s):
+            l = QLabel(t)
+            l.setFont(QFont("Arial", s))
+            l.setStyleSheet("color: white")
+            return l
+        def btn(t, fn):
+            b = QPushButton(t)
+            b.setStyleSheet(
+                "QPushButton {background:#6a5acd; color:white; font-size:20px; padding:10px; border-radius:10px}"
+                "QPushButton:hover {background:#7b68ee;}"
+            )
+            b.clicked.connect(fn)
+            return b
 
-        self.grid_size = 31
-        self.square_size = 20
-        self.planet_radius = self.grid_size // 2
+        self.score_lbl = label("", 24)
+        self.mult_lbl = label("", 18)
+        self.inc_lbl = label("", 18)
+        self.click_btn = btn("", self.up_click)
+        self.income_btn = btn("", self.up_income)
 
-        self.score_label = QLabel(f"Бали: {self.score}")
-        self.score_label.setFont(QFont("Arial", 28))
-        self.score_label.setStyleSheet("color: white;")
+        # Кнопка "Подарунок" з картинкою коробки
+        self.gift_btn = QPushButton()
+        self.gift_btn.setToolTip("Отримати щоденний бонус!")
+        self.gift_btn.setFixedSize(80, 80)
+        gift_pix = QPixmap("gift.png")
+        if gift_pix.isNull():
+            print("Помилка: не знайдено файл gift.png")
+        self.gift_btn.setIcon(QIcon(gift_pix))
+        self.gift_btn.setIconSize(gift_pix.rect().size())
+        self.gift_btn.setStyleSheet("background: transparent; border: none;")
+        self.gift_btn.clicked.connect(self.open_bonus_case)
 
-        self.multiplier_label = QLabel(f"Множник: x{self.click_power}")
-        self.multiplier_label.setFont(QFont("Arial", 24))
-        self.multiplier_label.setStyleSheet("color: #7fffd4;")
+        v = QVBoxLayout()
+        for w in [self.score_lbl, self.mult_lbl, self.inc_lbl, self.click_btn, self.income_btn, self.gift_btn]:
+            v.addWidget(w)
+        v.addStretch()
+        self.setLayout(v)
+        self.update_ui()
 
-        self.upgrade_button = QPushButton(f"Прокачати (+1) за {self.upgrade_cost}")
-        self.upgrade_button.setStyleSheet("""
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        cx, cy = self.width() // 2, self.height() // 2 + 100
+        for i in range(self.grid_size):
+            for j in range(self.grid_size):
+                if ((i - self.radius) ** 2 + (j - self.radius) ** 2) ** 0.5 <= self.radius:
+                    p.setBrush(self.phase_color())
+                    p.setPen(Qt.NoPen)
+                    p.drawRect(cx + (i - self.radius) * self.square, cy + (j - self.radius) * self.square, self.square, self.square)
+
+    def phase_color(self):
+        phase = min(self.click_power // 5 + 1, 5)
+        colors = [
+            [QColor(100, 200, 255), QColor(60, 179, 113)],
+            [QColor(34, 139, 34), QColor(0, 191, 255)],
+            [QColor(210, 180, 140), QColor(70, 130, 180)],
+            [QColor(240, 248, 255), QColor(70, 130, 180)],
+            [QColor(255, 20, 147), QColor(0, 255, 255)]
+        ][phase - 1]
+        return colors[0] if random.random() < 0.7 else colors[1]
+
+    def mousePressEvent(self, e):
+        cy = self.height() // 2 + 100
+        pt = cy - self.radius * self.square
+        pb = cy + self.radius * self.square
+        self.score += self.click_power * 1 if pt <= e.y() <= pb else self.click_power
+        self.update_ui()
+
+    def up_click(self):
+        if self.score >= self.click_cost:
+            self.score -= self.click_cost
+            self.click_power += 1
+            self.click_cost += 50
+            self.update_ui()
+        else:
+            self.show_insufficient_funds()
+
+    def up_income(self):
+        if self.score >= self.income_cost:
+            self.score -= self.income_cost
+            self.income += 1
+            self.income_cost += 100
+            self.update_ui()
+        else:
+            self.show_insufficient_funds()
+
+    def add_income(self):
+        if self.income > 0:
+            self.score += self.income
+            self.update_ui()
+
+    def update_ui(self):
+        self.score_lbl.setText(f"Бали: {self.score}")
+        self.mult_lbl.setText(f"Множник: x{self.click_power}")
+        self.inc_lbl.setText(f"Пасивний дохід: +{self.income}/сек")
+        self.click_btn.setText(f"Прокачати клік (+1) за {self.click_cost}")
+        self.income_btn.setText(f"Прокачати автоклік (+1/сек) за {self.income_cost}")
+        self.repaint()
+
+    def show_insufficient_funds(self):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Недостатньо грошей")
+        msg.setText("У вас недостатньо грошей для покупки!")
+        msg.setIcon(QMessageBox.Warning)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.setStyleSheet("""
+            QMessageBox {
+                background-color: #2e2e4d;
+                color: #e0e0e0;
+                font-size: 16px;
+                font-family: Arial;
+            }
             QPushButton {
                 background-color: #6a5acd;
                 color: white;
-                font-size: 22px;
-                padding: 12px;
-                border-radius: 10px;
+                border-radius: 8px;
+                padding: 8px 15px;
+                font-size: 16px;
             }
             QPushButton:hover {
                 background-color: #7b68ee;
             }
         """)
-        self.upgrade_button.clicked.connect(self.upgrade_click)
+        msg.exec_()
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.score_label)
-        layout.addWidget(self.multiplier_label)
-        layout.addStretch()
-        layout.addWidget(self.upgrade_button)
-        self.setLayout(layout)
+    def open_bonus_case(self):
+        if not self.daily_bonus_available:
+            QMessageBox.information(self, "Щоденний бонус", "Ви вже отримали бонус сьогодні. Спробуйте завтра!")
+            return
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        self.prizes = [
+            ("+100 балів", lambda: self.add_points(100)),
+            ("+1 множник кліку", lambda: self.add_click_power(1)),
+            ("+1 пасивний дохід", lambda: self.add_income_power(1)),
+            ("+200 балів", lambda: self.add_points(200)),
+            ("+2 множник кліку", lambda: self.add_click_power(2)),
+            ("+3 пасивний дохід", lambda: self.add_income_power(3)),
+        ]
 
-        screen_width = self.width()
-        start_x = screen_width // 2 - (self.grid_size * self.square_size) // 2
-        start_y = 120
-        center = self.grid_size // 2
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Щоденний бонус - Колесо Фортуни")
+        dialog.setStyleSheet("background:#1e1e2f; color: white;")
+        dialog.showFullScreen()
 
-        for i in range(self.grid_size):
-            for j in range(self.grid_size):
-                dist = ((i - center) ** 2 + (j - center) ** 2) ** 0.5
-                if dist <= self.planet_radius:
-                    color = self.get_color_by_phase()
-                    painter.setBrush(color)
-                    painter.setPen(Qt.NoPen)
-                    painter.drawRect(start_x + i * self.square_size,
-                                     start_y + j * self.square_size,
-                                     self.square_size, self.square_size)
+        layout = QVBoxLayout(dialog)
 
-    def get_color_by_phase(self):
-        """ Вибір кольору в залежності від фази планети """
-        phase = self.get_planet_phase()
-
-        if phase == 1:
-            return QColor(100, 200, 255) if random.random() < 0.75 else QColor(60, 179, 113)
-        elif phase == 2:
-            return QColor(34, 139, 34) if random.random() < 0.7 else QColor(0, 191, 255)
-        elif phase == 3:
-            rand = random.random()
-            if rand < 0.5:
-                return QColor(210, 180, 140)  # пустеля
-            elif rand < 0.8:
-                return QColor(70, 130, 180)  # вода
-            else:
-                return QColor(34, 139, 34)   # зелень
-        elif phase == 4:
-            rand = random.random()
-            if rand < 0.4:
-                return QColor(240, 248, 255)  # льодовик
-            elif rand < 0.7:
-                return QColor(70, 130, 180)  # вода
-            else:
-                return QColor(34, 139, 34)   # зелень
+        # Фон сундука (картинка)
+        chest_pix = QPixmap("chest.png")
+        if chest_pix.isNull():
+            print("Помилка: не знайдено файл chest.png")
+            # Якщо картинки немає, зробимо фон градієнтом
+            palette = dialog.palette()
+            gradient = QLinearGradient(0, 0, 0, dialog.height())
+            gradient.setColorAt(0, QColor("#3a2a0f"))
+            gradient.setColorAt(1, QColor("#1e1e2f"))
+            brush = QBrush(gradient)
+            palette.setBrush(QPalette.Window, brush)
+            dialog.setPalette(palette)
         else:
-            rand = random.random()
-            if rand < 0.4:
-                return QColor(255, 20, 147)  # фантастичні рожеві
-            elif rand < 0.7:
-                return QColor(0, 255, 255)   # неоново-блакитні
-            else:
-                return QColor(147, 112, 219) # пурпурові
+            # Відображаємо картинку як лейбл на фон
+            bg_label = QLabel(dialog)
+            bg_label.setPixmap(chest_pix.scaled(dialog.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
+            bg_label.setGeometry(0, 0, dialog.width(), dialog.height())
+            bg_label.lower()
 
-    def get_planet_phase(self):
-        """ Повертає фазу планети за множником """
-        if self.click_power < 5:
-            return 1
-        elif self.click_power < 10:
-            return 2
-        elif self.click_power < 15:
-            return 3
-        elif self.click_power < 20:
-            return 4
-        else:
-            return 5
+        # Надпис для анімації
+        self.animated_label = QLabel("")
+        self.animated_label.setAlignment(Qt.AlignCenter)
+        self.animated_label.setFont(QFont("Arial", 36, QFont.Bold))
+        self.animated_label.setStyleSheet("background: rgba(0,0,0,0.5); padding: 20px; border-radius: 15px;")
+        layout.addWidget(self.animated_label, alignment=Qt.AlignCenter)
 
-    def mousePressEvent(self, event):
-        x, y = event.x(), event.y()
-        screen_width = self.width()
-        start_x = screen_width // 2 - (self.grid_size * self.square_size) // 2
-        start_y = 120
-        end_x = start_x + self.grid_size * self.square_size
-        end_y = start_y + self.grid_size * self.square_size
-        center = self.grid_size // 2
+        # Кнопка закриття після анімації
+        self.close_btn = QPushButton("Закрити")
+        self.close_btn.setFont(QFont("Arial", 20))
+        self.close_btn.setStyleSheet(
+            "QPushButton {background:#6a5acd; color:white; padding:10px; border-radius:10px;}"
+            "QPushButton:hover {background:#7b68ee;}"
+        )
+        self.close_btn.clicked.connect(dialog.accept)
+        self.close_btn.setVisible(False)
+        layout.addWidget(self.close_btn, alignment=Qt.AlignCenter)
 
-        if start_x <= x <= end_x and start_y <= y <= end_y:
-            i = (x - start_x) // self.square_size
-            j = (y - start_y) // self.square_size
-            dist = ((i - center) ** 2 + (j - center) ** 2) ** 0.5
-            if dist <= self.planet_radius:
-                self.score += self.click_power * 2
-            else:
-                self.score += self.click_power
-        else:
-            self.score += self.click_power
+        self.prize_index = 0
+        self.cycles = 0
+        self.max_cycles = 30
 
+        self.timer_anim = QTimer()
+        self.timer_anim.timeout.connect(self.animate_prizes)
+        self.timer_anim.start(100)
+
+        self.dialog = dialog
+        dialog.exec_()
+
+    def animate_prizes(self):
+        prize_name, _ = self.prizes[self.prize_index]
+        self.animated_label.setText(prize_name)
+        self.prize_index = (self.prize_index + 1) % len(self.prizes)
+        self.cycles += 1
+        if self.cycles >= self.max_cycles:
+            self.timer_anim.stop()
+            final_prize_index = random.randint(0, len(self.prizes) - 1)
+            prize_name, prize_func = self.prizes[final_prize_index]
+            self.animated_label.setText(f"🎉 Вітаємо! Ви отримали: {prize_name} 🎉")
+            prize_func()
+            self.daily_bonus_available = False
+            self.close_btn.setVisible(True)
+
+    def add_points(self, amount):
+        self.score += amount
         self.update_ui()
 
-    def upgrade_click(self):
-        if self.score >= self.upgrade_cost:
-            self.score -= self.upgrade_cost
-            self.click_power += 1
-            self.upgrade_cost += 50
-            self.planet_radius += 0.5
-            if self.planet_radius > self.grid_size // 2:
-                self.planet_radius = self.grid_size // 2
-            self.update_ui()
+    def add_click_power(self, amount):
+        self.click_power += amount
+        self.update_ui()
 
-    def update_ui(self):
-        self.score_label.setText(f"Бали: {self.score}")
-        self.multiplier_label.setText(f"Множник: x{self.click_power}")
-        self.upgrade_button.setText(f"Прокачати (+1) за {self.upgrade_cost}")
-        self.repaint()
-
+    def add_income_power(self, amount):
+        self.income += amount
+        self.update_ui()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = PlanetClicker()
-    window.show()
+    w = PlanetClicker()
+    w.show()
     sys.exit(app.exec_())
